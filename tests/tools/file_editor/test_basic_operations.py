@@ -1,5 +1,7 @@
 """Tests for basic file editor operations."""
 
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -897,3 +899,29 @@ def test_str_replace_and_insert_snippet_output_on_a_large_file(editor):
         new_str="Inserted line at 500",
     )
     assert "   500\tInserted line at 500" in result.text
+
+
+def test_create_respects_umask(temp_dir):
+    """A newly created file gets 0o666 & ~umask, not NamedTemporaryFile's 0o600."""
+    old_umask = os.umask(0o022)
+    try:
+        target = temp_dir / "new.py"
+        result = file_editor(command="create", path=str(target), file_text="x = 1\n")
+        assert_successful_result(result, str(target))
+        assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    finally:
+        os.umask(old_umask)
+
+
+def test_edit_preserves_existing_file_mode(temp_file):
+    """Editing an existing file keeps its existing permission bits."""
+    os.chmod(temp_file, 0o640)
+    original = temp_file.read_text()
+    result = file_editor(
+        command="str_replace",
+        path=str(temp_file),
+        old_str=original,
+        new_str=original + "extra\n",
+    )
+    assert_successful_result(result, str(temp_file))
+    assert stat.S_IMODE(temp_file.stat().st_mode) == 0o640
