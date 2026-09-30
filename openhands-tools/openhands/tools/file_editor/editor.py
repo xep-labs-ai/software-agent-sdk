@@ -502,6 +502,13 @@ class FileEditor:
             # Preserve the original file's permission bits when it already exists.
             if path.exists():
                 os.chmod(tmp_path, os.stat(path).st_mode & 0o7777)
+            else:
+                # A brand-new file should get the same mode a plain open(path, "w")
+                # would produce (0o666 masked by the process umask), not the 0o600
+                # that NamedTemporaryFile hard-codes.
+                umask = os.umask(0)
+                os.umask(umask)
+                os.chmod(tmp_path, 0o666 & ~umask)
             Path.replace(tmp_path, path)
 
     @contextmanager
