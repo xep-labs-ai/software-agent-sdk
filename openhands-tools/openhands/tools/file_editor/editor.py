@@ -499,9 +499,18 @@ class FileEditor:
             encoding = default
 
         with self._temp_file(path, file_text, encoding) as tmp_path:
-            # Preserve the original file's permission bits when it already exists.
             if path.exists():
-                os.chmod(tmp_path, os.stat(path).st_mode & 0o7777)
+                # Preserve the original file's permission bits when it already exists.
+                mode = os.stat(path).st_mode & 0o7777
+            else:
+                # Match the mode a plain open(path, "w") would produce:
+                # 0o666 masked by the process umask. Read the umask via the
+                # set-and-return form (no-arg os.umask() is unavailable here)
+                # and restore it immediately.
+                umask = os.umask(0o022)
+                os.umask(umask)
+                mode = 0o666 & ~umask
+            os.chmod(tmp_path, mode)
             Path.replace(tmp_path, path)
 
     @contextmanager
