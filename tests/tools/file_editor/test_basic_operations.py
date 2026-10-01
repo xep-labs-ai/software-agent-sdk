@@ -1,5 +1,7 @@
 """Tests for basic file editor operations."""
 
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -897,3 +899,31 @@ def test_str_replace_and_insert_snippet_output_on_a_large_file(editor):
         new_str="Inserted line at 500",
     )
     assert "   500\tInserted line at 500" in result.text
+
+
+def test_create_file_respects_umask(tmp_path):
+    """Test that create respects umask and editing preserves existing mode."""
+    old_umask = os.umask(0o022)
+    try:
+        # New file created via `create` should get 0o666 & ~umask (0o644 here).
+        new_file = tmp_path / "new_file.txt"
+        result = file_editor(command="create", path=str(new_file), file_text="x = 1\n")
+        assert_successful_result(result, str(new_file))
+        actual = stat.S_IMODE(new_file.stat().st_mode)
+        assert actual == (0o666 & ~0o022), f"Expected 0o644, got {oct(actual)}"
+
+        # Editing an existing file must preserve its existing mode.
+        existing = tmp_path / "existing.txt"
+        existing.write_text("existing content\n")
+        os.chmod(existing, 0o640)
+        result = file_editor(
+            command="str_replace",
+            path=str(existing),
+            old_str="existing content",
+            new_str="modified content",
+        )
+        assert_successful_result(result, str(existing))
+        actual = stat.S_IMODE(existing.stat().st_mode)
+        assert actual == 0o640, f"Expected 0o640 preserved, got {oct(actual)}"
+    finally:
+        os.umask(old_umask)
